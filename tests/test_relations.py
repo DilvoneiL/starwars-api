@@ -1,38 +1,59 @@
-from typing import Any, Dict, List, Optional
-from fastapi import APIRouter
-from app.core.errors import NotFoundError
-from app.services.swapi_client import get_json
-from app.services.sorting import sort_items
+import respx
+from httpx import Response
 
-router = APIRouter(tags=["relations"])
+SWAPI = "https://swapi.dev/api"
 
-@router.get("/films/{film_id}/characters")
-async def film_characters(
-    film_id: int,
-    sort: Optional[str] = "name",
-    order: str = "asc",
-    fields: Optional[str] = None,
-):
-    film = await get_json(f"films/{film_id}/")
-    if not film:
-        raise NotFoundError("Film not found")
 
-    characters_urls: List[str] = film.get("characters", [])
-    characters: List[Dict[str, Any]] = []
-    for url in characters_urls:
-        characters.append(await get_json(url))
+@respx.mock
+def test_film_not_found_returns_404(client):
+    respx.get(f"{SWAPI}/films/999/").mock(
+        return_value=Response(404, json={"detail": "Not found"})
+    )
 
-    # ordenação local
-    characters = sort_items(characters, sort=sort, order=order)
+    r = client.get("/v1/films/999/characters")
+    assert r.status_code == 404
 
-    # seleção de campos
-    if fields:
-        wanted = [x.strip() for x in fields.split(",") if x.strip()]
-        characters = [{k: c.get(k) for k in wanted if k in c} for c in characters]
 
-    return {
-        "film_id": film_id,
-        "film_title": film.get("title"),
-        "count": len(characters),
-        "results": characters,
-    }
+@respx.mock
+def test_film_characters_pagination(client):
+    film_id = 1
+
+    respx.get(f"{SWAPI}/films/{film_id}/").mock(
+        return_value=Response(
+            200,
+            json={
+                "title": "A New Hope",
+                "characters": [
+                    f"{SWAPI}/people/1/",
+                    f"{SWAPI}/people/2/",
+                    f"{SWAPI}/people/3/",
+                ],
+            },
+        )
+    )
+
+    respx.get(f"{SWAPI}/people/1/").mock(return_value=Response(200, json={"name": "Luke"}))
+    respx.get(f"{SWAPI}/people/2/").mock(return_value=Response(200, json={"name": "Leia"}))
+    respx.get(f"{SWAPI}/people/3/").mock(return_value=Response(200, json={"name": "Han"}))
+
+    r = client.get("/v1/films/1/characters?sort=name&order=asc&page=2&page_size=1")
+    assert r.status_code == 200
+
+    data = r.json()
+    assert data["count"] == 3
+    assert data["page"] == 2
+    assert data["page_size"] == 1
+    assert data["results"][0]["name"] == "Leia"
+
+
+@respx.mock
+def test_film_characters_bad_page_returns_400(client):
+    film_id = 1
+    # mock do filme para garantir que se o handler passar pela validação, existe upstream
+    respx.get(f"{SWAPI}/films/{film_id}/").mock(
+        return_value=Response(200, json={"title": "A New Hope", "characters": []})
+    )
+
+    r = client.get("/v1/films/1/characters?page=0")
+    assert r.status_code == 400
+    assert "page must be" in r.json()["error"]
