@@ -19,6 +19,15 @@ app.include_router(relations_router, prefix="/v1")
 # Exception handlers
 add_exception_handlers(app)
 
+@app.get("/")
+def root():
+    return {
+        "name": "StarWars API",
+        "docs": "/docs",
+        "health": "/health",
+        "example": "/v1/resources/people?search=luke"
+    }
+
 @app.get("/health", tags=["health"])
 def health():
     return {"status": "ok"}
