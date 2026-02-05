@@ -14,7 +14,8 @@ API backend desenvolvida em **Python + FastAPI** que consome a **SWAPI (swapi.de
 - deploy no GCP com Cloud Functions (2ª gen) + API Gateway
 
 > **Objetivo do case**  
-> Demonstrar domínio de backend Python, integração com APIs externas, aplicação de regras de negócio, boas práticas de arquitetura, testes automatizados e deploy no Google Cloud Platform.
+> Construir uma API de backend em Python com integração externa (SWAPI), aplicação de regras de negócio, testes automatizados e deploy no Google Cloud Platform — seguindo boas práticas modernas de arquitetura e documentação.
+
 
 ---
 
@@ -40,6 +41,8 @@ flowchart LR
   CF --> SW[SWAPI.dev]
   CF -->|opcional| C[(Cache TTL em memória)]
 ````
+
+> *Diagrama simplificado da arquitetura*
 
 ### Componentes
 
@@ -76,13 +79,24 @@ https://starwars-gw-4pd5e11l.uc.gateway.dev
 ### Backend direto (Cloud Run / Cloud Functions)
 
 ```text
-https://starwars-api-368671327689.us-central1.run.app
+Health: https://starwars-gw-4pd5e11l.uc.gateway.dev/health
+Example: https://starwars-gw-4pd5e11l.uc.gateway.dev/v1/resources/people?search=luke
 ```
 
 > 🔎 **Observação importante**
 > O backend pode ser acessado diretamente, mas **o consumo recomendado é via API Gateway**, conforme solicitado no desafio.
 
 ---
+
+### 📖 Documentação Swagger
+
+A documentação gerada automaticamente pelo FastAPI (Swagger UI) está disponível em:
+
+🔗 [https://starwars-api-368671327689.us-central1.run.app/docs](https://starwars-api-368671327689.us-central1.run.app/docs)
+
+> *Disponível via backend direto no GCP (Cloud Functions)*  
+> via API Gateway, a rota `/docs` não está exposta.
+
 
 ## 4) Endpoints
 
@@ -130,10 +144,13 @@ Recursos suportados:
 
 > A SWAPI não suporta todos os filtros por campo; estes são aplicados localmente.
 
-* **People**: `gender`, `eye_color`, `hair_color`, `min_height`, `max_height`
-* **Planets**: `climate`, `terrain`, `min_population`, `max_population`
-* **Starships**: `starship_class`
-* **Films**: extensível conforme necessidade
+| Recurso     | Filtros suportados                             |
+|-------------|------------------------------------------------|
+| People      | `gender`, `eye_color`, `hair_color`, `min_height`, `max_height` |
+| Planets     | `climate`, `terrain`, `min_population`, `max_population` |
+| Starships   | `starship_class`                               |
+| Films       | — (extensível)                                 |
+
 
 ---
 
@@ -257,9 +274,20 @@ Fluxo:
 
 ## 9) Decisões Técnicas
 
-* **FastAPI** pela produtividade e OpenAPI automático
-* **Separação em camadas** (`routers`, `services`, `core`)
-* **Cache TTL** para reduzir latência e dependência externa
-* **Testes com mock HTTP** para confiabilidade e velocidade
+- **FastAPI** pela produtividade e documentação automática via OpenAPI
+- **Separação em camadas** (`routers`, `services`, `core`) para organização do código
+- **Cache TTL in-memory** para reduzir latência e dependência da SWAPI
+- **Testes com mock HTTP (respx)** para garantir confiabilidade, velocidade e isolamento
+- **Deploy via GCP (Cloud Functions + API Gateway)** usando OpenAPI personalizado (`x-google-backend`)
 
-```
+---
+
+## 10) Evoluções Possíveis
+
+- Adicionar autenticação via API Key no API Gateway
+- Criar cache distribuído com Redis (substituindo o cache in-memory atual)
+- Subir pipeline CI/CD com GitHub Actions para automação de testes e deploy
+- Melhorar tratamento de erros com estrutura de exceções personalizada
+- Gerar relatório de cobertura de testes com `pytest-cov`
+- Modularizar variáveis e configurações por ambiente (`.env.dev`, `.env.prod`)
+- Enriquecer a documentação com exemplos no OpenAPI (`openapi.json`) e Swagger UI
