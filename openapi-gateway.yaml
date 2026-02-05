@@ -1,0 +1,152 @@
+swagger: "2.0"
+info:
+  title: StarWars API
+  description: API intermediária para consultas na SWAPI com filtros, ordenação e relações.
+  version: "1.0.0"
+
+schemes:
+  - https
+
+x-google-backend:
+  address: https://starwars-api-368671327689.us-central1.run.app
+  protocol: h2
+
+paths:
+  /health:
+    get:
+      operationId: health
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+
+  /v1/resources/{resource}:
+    get:
+      operationId: listResource
+      produces:
+        - application/json
+      parameters:
+        - name: resource
+          in: path
+          required: true
+          type: string
+        - name: search
+          in: query
+          required: false
+          type: string
+        - name: page
+          in: query
+          required: false
+          type: integer
+          default: 1
+        - name: sort
+          in: query
+          required: false
+          type: string
+        - name: order
+          in: query
+          required: false
+          type: string
+          default: asc
+        - name: fields
+          in: query
+          required: false
+          type: string
+        - name: include
+          in: query
+          required: false
+          type: string
+        - name: gender
+          in: query
+          required: false
+          type: string
+        - name: eye_color
+          in: query
+          required: false
+          type: string
+        - name: hair_color
+          in: query
+          required: false
+          type: string
+        - name: climate
+          in: query
+          required: false
+          type: string
+        - name: terrain
+          in: query
+          required: false
+          type: string
+        - name: starship_class
+          in: query
+          required: false
+          type: string
+        - name: min_height
+          in: query
+          required: false
+          type: integer
+        - name: max_height
+          in: query
+          required: false
+          type: integer
+        - name: min_population
+          in: query
+          required: false
+          type: integer
+        - name: max_population
+          in: query
+          required: false
+          type: integer
+      responses:
+        "200":
+          description: Successful Response
+          schema:
+            type: object
+        "422":
+          description: Validation Error
+          schema:
+            type: object
+
+  /v1/films/{film_id}/characters:
+    get:
+      operationId: filmCharacters
+      produces:
+        - application/json
+      parameters:
+        - name: film_id
+          in: path
+          required: true
+          type: integer
+        - name: sort
+          in: query
+          required: false
+          type: string
+          default: name
+        - name: order
+          in: query
+          required: false
+          type: string
+          default: asc
+        - name: fields
+          in: query
+          required: false
+          type: string
+        - name: page
+          in: query
+          required: false
+          type: integer
+          default: 1
+        - name: page_size
+          in: query
+          required: false
+          type: integer
+          default: 10
+      responses:
+        "200":
+          description: Successful Response
+          schema:
+            type: object
+        "422":
+          description: Validation Error
+          schema:
+            type: object
