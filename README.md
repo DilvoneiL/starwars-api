@@ -1,23 +1,33 @@
-# StarWars API (SWAPI Wrapper) — Case Técnico PowerOfData
+# StarWars API (SWAPI Wrapper)
 
-API em **Python + FastAPI** que consome a **SWAPI (swapi.dev)** e adiciona valor com:
-- **filtros locais** (quando a SWAPI não suporta por campo)
-- **ordenação** (asc/desc)
-- **seleção de campos** (`fields=...`)
-- **expansão de relacionamentos** (`include=...`)
-- endpoints **correlacionados** (ex.: personagens de um filme)
+### Case Técnico — PowerOfData
 
-> Objetivo: entregar uma experiência mais rica e padronizada para consultas de personagens, planetas, naves e filmes do universo Star Wars.
+API backend desenvolvida em **Python + FastAPI** que consome a **SWAPI (swapi.dev)** e adiciona uma camada de valor com:
+
+- filtros locais (além das capacidades da SWAPI)
+- ordenação (`asc|desc`)
+- projeção de campos (`fields=...`)
+- expansão de relacionamentos (`include=...`)
+- endpoints correlacionados (ex.: personagens de um filme)
+- cache TTL em memória
+- testes automatizados com mock HTTP
+- deploy no GCP com Cloud Functions (2ª gen) + API Gateway
+
+> **Objetivo do case**  
+> Demonstrar domínio de backend Python, integração com APIs externas, aplicação de regras de negócio, boas práticas de arquitetura, testes automatizados e deploy no Google Cloud Platform.
 
 ---
 
-## 1) Visão geral
+## 1) Visão Geral
 
-A aplicação atua como uma camada intermediária (BFF/API Aggregator):
-1. Recebe requests do cliente
-2. Busca dados na SWAPI
-3. Aplica regras locais (filtros/ordenação/include/fields)
-4. Retorna uma resposta padronizada, com metadados (`meta`)
+A aplicação atua como uma **API intermediária / BFF (Backend For Frontend)**:
+
+1. Recebe requisições do cliente
+2. Consulta dados na SWAPI
+3. Aplica regras de negócio locais (filtros, ordenação, include, fields)
+4. Retorna respostas padronizadas, com metadados consistentes
+
+Essa abordagem permite oferecer uma experiência mais rica, previsível e controlada do que o consumo direto da SWAPI.
 
 ---
 
@@ -25,36 +35,74 @@ A aplicação atua como uma camada intermediária (BFF/API Aggregator):
 
 ```mermaid
 flowchart LR
-  U[Cliente] --> G[API Gateway / Apigee]
-  G --> CF[Cloud Functions (Python/FastAPI)]
+  U[Cliente] --> G[API Gateway]
+  G --> CF[Cloud Functions 2ª gen / Cloud Run]
   CF --> SW[SWAPI.dev]
   CF -->|opcional| C[(Cache TTL em memória)]
 ````
 
 ### Componentes
 
-* **API Gateway/Apigee**: roteamento, autenticação e rate limiting (quando habilitado)
-* **Cloud Functions (2ª geração)**: execução do backend Python
-* **SWAPI**: fonte de dados externa
-* **Cache TTL (in-memory)**: reduz chamadas repetidas e melhora latência
+* **API Gateway**
+
+  * Roteamento HTTP
+  * Camada de entrada pública
+  * Possibilidade de autenticação, rate limiting e controle de acesso
+
+* **Cloud Functions (2ª geração)**
+
+  * Execução do backend Python
+  * FastAPI adaptado via **ASGI → WSGI (a2wsgi)**
+
+* **SWAPI**
+
+  * Fonte de dados externa
+
+* **Cache TTL (in-memory)**
+
+  * Reduz chamadas repetidas à SWAPI
+  * Melhora latência e estabilidade
 
 ---
 
-## 3) Endpoints
+## 3) URLs do serviço
 
-### 3.1 Healthcheck
+### Via API Gateway (URL principal para consumo)
+
+```text
+https://starwars-gw-4pd5e11l.uc.gateway.dev
+```
+
+### Backend direto (Cloud Run / Cloud Functions)
+
+```text
+https://starwars-api-368671327689.us-central1.run.app
+```
+
+> 🔎 **Observação importante**
+> O backend pode ser acessado diretamente, mas **o consumo recomendado é via API Gateway**, conforme solicitado no desafio.
+
+---
+
+## 4) Endpoints
+
+### 4.1 Healthcheck
 
 **GET** `/health`
-
-**Response**
 
 ```json
 { "status": "ok" }
 ```
 
+Exemplo (via Gateway):
+
+```bash
+curl https://starwars-gw-4pd5e11l.uc.gateway.dev/health
+```
+
 ---
 
-### 3.2 Listagem genérica por recurso
+### 4.2 Listagem genérica por recurso
 
 **GET** `/v1/resources/{resource}`
 
@@ -67,84 +115,45 @@ Recursos suportados:
 
 #### Query Params
 
-* `search` (string): repassa para SWAPI `?search=...`
-* `page` (int): repassa para SWAPI `?page=...` (padrão: 1)
-* `sort` (string): ordena resultados **da página atual** (ex.: `name`)
-* `order` (`asc|desc`): direção da ordenação
-* `fields` (csv): projeção de campos (ex.: `fields=name,gender`)
-* `include` (csv): expande relacionamentos (ex.: `include=homeworld`)
+| Parâmetro | Tipo   | Descrição                           |                      |
+| --------- | ------ | ----------------------------------- | -------------------- |
+| `search`  | string | Repassado para a SWAPI (`?search=`) |                      |
+| `page`    | int    | Página da SWAPI (default: 1)        |                      |
+| `sort`    | string | Campo para ordenação local          |                      |
+| `order`   | `asc   | desc`                               | Direção da ordenação |
+| `fields`  | csv    | Projeção de campos                  |                      |
+| `include` | csv    | Expansão de relacionamentos         |                      |
+
+---
 
 #### Filtros locais (exemplos)
 
-> Observação: a SWAPI não suporta todos os filtros por campo; estes são aplicados localmente na API.
+> A SWAPI não suporta todos os filtros por campo; estes são aplicados localmente.
 
-* People: `gender`, `eye_color`, `hair_color`, `min_height`, `max_height`
-* Planets: `climate`, `terrain`, `min_population`, `max_population`
-* Starships: `starship_class`
-* Films: (pode ser expandido conforme necessidade)
+* **People**: `gender`, `eye_color`, `hair_color`, `min_height`, `max_height`
+* **Planets**: `climate`, `terrain`, `min_population`, `max_population`
+* **Starships**: `starship_class`
+* **Films**: extensível conforme necessidade
 
 ---
 
-#### Exemplo 1: buscar Luke
+#### Exemplo — Buscar Luke (via Gateway)
 
 ```bash
-curl "http://127.0.0.1:8000/v1/resources/people?search=luke"
-```
-
-**Response (exemplo)**
-
-```json
-{
-  "resource":"people",
-  "count":1,
-  "page":1,
-  "page_size":1,
-  "next":null,
-  "previous":null,
-  "results":[{ "name":"Luke Skywalker", "...": "..." }],
-  "meta": { "sort": null, "order":"asc", "filters_applied":{}, "included":[] }
-}
+curl "https://starwars-gw-4pd5e11l.uc.gateway.dev/v1/resources/people?search=luke"
 ```
 
 ---
 
-#### Exemplo 2: include (expansão do homeworld)
+#### Exemplo — Include (expansão de relacionamento)
 
 ```bash
-curl "http://127.0.0.1:8000/v1/resources/people?search=luke&include=homeworld"
-```
-
-**Response (trecho)**
-
-```json
-{
-  "results": [
-    {
-      "name": "Luke Skywalker",
-      "homeworld": {
-        "name": "Tatooine",
-        "climate": "arid",
-        "terrain": "desert"
-      }
-    }
-  ],
-  "meta": { "included": ["homeworld"] }
-}
+curl "https://starwars-gw-4pd5e11l.uc.gateway.dev/v1/resources/people?search=luke&include=homeworld"
 ```
 
 ---
 
-#### Exemplo 3: ordenação por nome (página atual)
-
-```bash
-curl "http://127.0.0.1:8000/v1/resources/people?sort=name&order=asc"
-```
-
-> Nota: a ordenação é aplicada **nos itens retornados pela SWAPI na página consultada**.
-
----
-
-### 3.3 Endpoints correlacionados (relações)
+### 4.3 Endpoints correlacionados
 
 #### Personagens de um filme
 
@@ -152,61 +161,43 @@ curl "http://127.0.0.1:8000/v1/resources/people?sort=name&order=asc"
 
 Query Params:
 
-* `sort` (padrão: `name`)
+* `sort` (default: `name`)
 * `order` (`asc|desc`)
 * `fields` (csv)
-
-**Exemplo**
+* `page` (default: 1)
+* `page_size` (default: 10)
 
 ```bash
-curl "http://127.0.0.1:8000/v1/films/1/characters?sort=name&fields=name,gender"
-```
-
-**Response**
-
-```json
-{
-  "film_id": 1,
-  "film_title": "A New Hope",
-  "count": 18,
-  "results": [
-    { "name": "Beru Whitesun lars", "gender": "female" },
-    { "name": "Biggs Darklighter", "gender": "male" }
-  ]
-}
+curl "https://starwars-gw-4pd5e11l.uc.gateway.dev/v1/films/1/characters?sort=name&order=asc&fields=name,gender&page=1&page_size=5"
 ```
 
 ---
 
-## 4) Rodando localmente
+## 5) Execução local
 
-### 4.1 Pré-requisitos
+### Pré-requisitos
 
 * Python 3.10+
 * pip
 
-### 4.2 Instalação de dependências
+### Instalação
 
 ```bash
-python3 -m pip install --user -r requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 
-### 4.3 Executar servidor
+### Subir servidor
 
 ```bash
 python3 -m uvicorn app.main:app --reload
 ```
-
-Acessos:
 
 * Swagger: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 * Health: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
 
 ---
 
-## 5) Variáveis de ambiente (.env)
-
-Opcional. Se quiser, crie um arquivo `.env`:
+## 6) Variáveis de ambiente
 
 ```env
 SWAPI_BASE_URL=https://swapi.dev/api
@@ -215,92 +206,60 @@ CACHE_TTL_SECONDS=120
 MAX_INCLUDE_DEPTH=1
 ```
 
-> Se estiver usando `.env`, execute o uvicorn garantindo carregamento (ou configure no ambiente).
-> No GCP, prefira configurar essas variáveis diretamente no serviço (Cloud Functions).
+No GCP, essas variáveis são configuradas diretamente no serviço.
 
 ---
 
-## 6) Deploy no GCP (Cloud Functions + API Gateway)
+## 7) Testes
 
-> Observação: existem várias formas de publicar FastAPI no GCP. Para este case, o objetivo é demonstrar arquitetura e entrega.
+Os testes utilizam:
 
-### 6.1 Cloud Functions (2ª geração)
+* pytest
+* FastAPI TestClient
+* respx (mock de chamadas HTTP externas)
 
-Passos gerais:
-
-1. Criar um projeto no GCP
-
-2. Habilitar APIs:
-
-   * Cloud Functions
-   * Cloud Build
-   * Artifact Registry
-   * API Gateway (se usar)
-
-3. Fazer deploy da função apontando para o app FastAPI (via container/entrypoint).
-
-> **Sugestão de implementação**: usar Functions Framework / container para expor o FastAPI.
-
-### 6.2 API Gateway
-
-1. Exportar OpenAPI (FastAPI fornece automaticamente):
-
-   * Acesse `http://<host>/openapi.json`
-   * Salve e converta para YAML se necessário
-2. Criar API Config no API Gateway usando o `openapi.yaml`
-3. Apontar o Gateway para a Cloud Function
-
-### 6.3 Autenticação (opcional)
-
-* API Key (no API Gateway) ou JWT (dependendo do nível de segurança desejado)
-
----
-
-## 7) Rodando testes
-
-### 7.1 Executar
+Execução:
 
 ```bash
 pytest -q
 ```
 
-> Os testes cobrem filtros/ordenação e podem ser expandidos para testes de rotas com mock de HTTP (SWAPI).
+Os testes garantem:
+
+* isolamento da SWAPI
+* semântica correta de erros (404 vs 502)
+* filtros, ordenação, paginação e includes
 
 ---
 
-## 8) Decisões técnicas
+## 8) Deploy no GCP (resumo)
 
-### Por que FastAPI?
+### Cloud Functions (2ª geração)
 
-* Alto desempenho e ergonomia
-* Tipagem e validação via Pydantic
-* Documentação automática (Swagger/OpenAPI), útil para API Gateway
+* FastAPI adaptado via **a2wsgi**
+* Entry point exposto via **Functions Framework**
 
-### Por que separar em routers/services/core?
+Fluxo:
 
-* Facilita manutenção e testes
-* Routers: camada HTTP (orquestração)
-* Services: regras de negócio (filtros, include, integração SWAPI)
-* Core: configuração/infra (logs, erros)
+1. Criar projeto no GCP
+2. Habilitar APIs necessárias
+3. Deploy da função HTTP
+4. Obter URL pública
 
-### Por que cache TTL?
+### API Gateway
 
-* Reduz chamadas repetidas à SWAPI
-* Melhora latência e confiabilidade
-* Implementação simples e eficiente para o escopo do case
-
-### Por que filtros/ordenação locais?
-
-* A SWAPI tem limitações de filtros por campo
-* O case exige capacidade de aplicar regras de negócio além do “proxy”
+1. Exportar OpenAPI (`/openapi.json`)
+2. Converter para `openapi.yaml` (OpenAPI 3.0.x)
+3. Criar API Config e Gateway apontando para a Cloud Function
+4. (Opcional) configurar API Key / rate limit
 
 ---
 
-## 9) Próximos passos (melhorias)
+## 9) Decisões Técnicas
 
-* Paginação própria em endpoints correlacionados (ex.: `films/{id}/characters?page=...`)
-* Testes de rota com mock HTTP (respx/httpx)
-* Rate limit e autenticação no API Gateway
-* Observabilidade (request_id, logs estruturados)
+* **FastAPI** pela produtividade e OpenAPI automático
+* **Separação em camadas** (`routers`, `services`, `core`)
+* **Cache TTL** para reduzir latência e dependência externa
+* **Testes com mock HTTP** para confiabilidade e velocidade
 
 ```
